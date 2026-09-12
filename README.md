@@ -20,3 +20,5 @@
 - Debian / Ubuntu 等基于 APT 的 Linux 发行版
 - `pkexec`（通常随 PolicyKit 预装，用于图形化提权）
 - `apt-cache`、`apt-get`、`dpkg`（APT 系统自带
+
+- 目前没时间开源，有时间开源

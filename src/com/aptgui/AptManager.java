@@ -214,4 +214,117 @@ public class AptManager {
         readerThread.join(5000);
         return proc.exitValue();
     }
+
+    // ========== 系统工具（「更多」菜单） ==========
+
+    /** 通用提权命令执行：pkexec <cmd...>，实时推送输出 */
+    private int runPrivileged(List<String> command, Consumer<String> outputConsumer,
+                              int timeoutSeconds) throws IOException, InterruptedException {
+        List<String> full = new ArrayList<>();
+        full.add("pkexec");
+        full.addAll(command);
+
+        ProcessBuilder pb = new ProcessBuilder(full);
+        pb.redirectErrorStream(true);
+        Process proc = pb.start();
+
+        Thread readerThread = new Thread(() -> {
+            try (InputStream is = proc.getInputStream();
+                 BufferedReader reader = new BufferedReader(
+                         new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (outputConsumer != null) {
+                        outputConsumer.accept(line);
+                    }
+                }
+            } catch (IOException e) {
+                if (outputConsumer != null) {
+                    outputConsumer.accept("[读取输出错误] " + e.getMessage());
+                }
+            }
+        });
+        readerThread.setDaemon(true);
+        readerThread.start();
+
+        boolean finished = proc.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+        if (!finished) {
+            proc.destroyForcibly();
+            if (outputConsumer != null) {
+                outputConsumer.accept("[错误] 操作超时，进程已强制终止。");
+            }
+            return -1;
+        }
+        readerThread.join(5000);
+        return proc.exitValue();
+    }
+
+    /**
+     * APT 修复：apt-get install -f，修复损坏的依赖。
+     */
+    public int fixBroken(Consumer<String> outputConsumer)
+            throws IOException, InterruptedException {
+        return runPrivileged(List.of("apt-get", "install", "-f", "-y"),
+                outputConsumer, 300);
+    }
+
+    /**
+     * 添加软件源：add-apt-repository -y <source>
+     */
+    public int addRepository(String source, Consumer<String> outputConsumer)
+            throws IOException, InterruptedException {
+        return runPrivileged(List.of("add-apt-repository", "-y", source),
+                outputConsumer, 180);
+    }
+
+    /**
+     * 卸载软件包：apt-get remove -y <pkg>
+     */
+    public int uninstall(String packageName, Consumer<String> outputConsumer)
+            throws IOException, InterruptedException {
+        return runPrivileged(List.of("apt-get", "remove", "-y", packageName),
+                outputConsumer, 300);
+    }
+
+    /**
+     * 清理无用依赖：apt-get autoremove -y
+     */
+    public int autoremove(Consumer<String> outputConsumer)
+            throws IOException, InterruptedException {
+        return runPrivileged(List.of("apt-get", "autoremove", "-y"),
+                outputConsumer, 300);
+    }
+
+    /**
+     * 升级全部软件包：apt-get upgrade -y
+     */
+    public int upgrade(Consumer<String> outputConsumer)
+            throws IOException, InterruptedException {
+        return runPrivileged(List.of("apt-get", "upgrade", "-y"),
+                outputConsumer, 600);
+    }
+
+    /**
+     * 列出所有已安装的软件包（dpkg-query，状态为 installed）。
+     */
+    public List<PackageInfo> listInstalled() throws IOException, InterruptedException {
+        List<PackageInfo> result = new ArrayList<>();
+        ProcessBuilder pb = new ProcessBuilder("dpkg-query", "-W",
+                "-f=${binary:Package}\t${Version}\t${db:Status-Status}\n");
+        pb.redirectErrorStream(true);
+        Process proc = pb.start();
+
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split("\t");
+                if (parts.length >= 3 && "installed".equals(parts[2])) {
+                    result.add(new PackageInfo(parts[0], parts[1], true));
+                }
+            }
+        }
+        proc.waitFor(CMD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        return result;
+    }
 }

@@ -34,6 +34,11 @@ public class PackageInfo {
         this(name, "—", "—", "—", "—", "—", description, "", false);
     }
 
+    /** 已安装软件包列表构造（包名 + 版本） */
+    public PackageInfo(String name, String version, boolean installed) {
+        this(name, version, "—", "—", "—", "—", "", "", installed);
+    }
+
     public String getName()             { return name; }
     public String getVersion()          { return version; }
     public String getSection()          { return section; }
